@@ -1,0 +1,138 @@
+2009-02-03  jcw
+   * all: this code was copied from svn://svn.equi4.com/sdx/trunk
+2008-02-24  jcw
+   * mk{info,pack,split}.tcl: fixed to run on 64-bit arch, see tip at FFF#463
+   * ftp_lib.tcl: restore package provide version to 1.2, see FFF#232
+2007-04-08  jcw
+   * tgz2kit.tcl: fix file/dir type detection, copy file mtime to result file
+2007-04-07  jcw
+   * treetime.tcl: skip CVS and .svn dirs to allow using this on source trees
+2007-03-29  jcw
+   * cvs: repository moved to svn, added ".svn" as dirs to ignore by default
+2006-12-06  jcw
+   * Changelog: re-instated, cvstrac is not used after all
+   * mkinfo.tcl: now also works on new vlerq datafiles when using tclkit lite
+   * wrap.tcl: extended to support creation of starpacks with tclkit lite
+2006-11-15  jcw
+   * lsk.tcl: make lsk's dirs align properly in the output
+   * sdx.tcl, sync.tcl, wrap.tcl: change obsolete pkg req "mk4vfs" to "vfs::mk4"
+2006-11-05  jcw
+   * wrap.tcl: adjusted to work with a tclkit lite based on vlerq 4
+   * unwrap.tcl, help.tcl: remove obsolete refs to "scripted documents"
+   * lib/vlerq/*: removed, essential parts are in tclkit lite revs >= 8.4.14
+2005-11-20  jcw
+   * wrap.tcl: added -vfs option to wrap, as suggested by D. Sanderson.
+2005-11-19  jcw
+   * sdx.tcl: quoting fix, thx. M. Hoffmann, wiki page 6084
+2005-11-17  jcw
+   * main.tcl: Added a check that Tclkit >= 8.4.9 is being used, otherwise
+     we assume we use an older version of the "starkit" package which does
+     not correctly detect the "sourced" startup if the starkit is symlinked.
+     The workaround always allows command-line mode, even if < 8.4.9 so that
+     SDX remains usable with all Tclkit's out there.  Thx, D. Sanderson.
+2005-11-14  jcw
+   * vlerq/: updated to ratcl 0.97
+2005-11-11  jcw
+   * vlerq/: updated to thrive 2.19, thrill 0.51, and ratcl 0.96
+2005-11-10  jcw
+   * wrap.tcl, vlerq/: added code from the Vlerq project to support
+     wrapping starkits when run from Tclkit Lite (but no starpacks yet)
+2005-11-07  jcw
+   * sdx.tcl: avoid polluting global namespace (Massimo Dal Zotto)
+   * ls.tcl: improve output and symlink handling (Massimo Dal Zotto)
+2005-10-19  jcw
+   * sdx.tcl: changed to fall back to mkclvfs iso mklite (no longer used)
+2005-10-14  jcw
+   * mkinfo.tcl: drop explicit package require of Mk4tcl
+   * sdx.tcl: try to fall back to mklite if Mk4tcl is not present
+2005-08-30  jcw
+   * sync.tcl: stop ignoring RCS, core, and a.out - only ignore CVS since
+   that one is relied upon in several places (thx W. Kocjan)
+2005-03-18  jcw
+   * stringfileinfo.tcl: added logic to make it work on big-endian too
+   * wrap.tcl: don't create .bat file if -runtime option is specified
+2005-03-15  jcw
+   * wrap.tcl, stringfileinfo/: added code to customize the strings in
+     a Windows exe via a tclkit.inf file (analogous to tclkit.ico)
+     Thanks to A. Faupell for submitting working code (and his patience).
+     This only works *on* a little-endian machine, due to Unicode issues!
+2005-03-01  jcw
+   * httpd.tcl: clock clicks replaced by clock seconds, BTS#114, doh!
+2005-01-17  jcw
+   * sdx.tcl: added sdx package, as suggested by Brian Theado (thx!)
+2004-05-27  jcw
+   * qwrap.tcl: add -runtime option to qwrap, thx to Bryan Schofield
+   * help.tcl: docs updated also
+2004-04-29  jcw
+   * qwrap.tcl: improved package require detection, and a little cleanup
+                with thanks to Gerhard Grimm, this resolves BTS#91
+2004-01-10  jcw
+   * mkpack.tcl: new subcommand to copy & pack (i.e. remove free space)
+2004-01-02  jcw
+   * mksplit.tcl: new subcommand to split starkit/starpack files in two
+2003-11-28  jcw
+   * md5sum.tcl: fixed to work with built-in MD5 in Tcl (thx D. Zolli)
+   * addtoc.tcl: same fix, this module is "a bit obsolete" by now
+2003-07-06  jcw
+   * wrap.tcl,sync.tcl: added -preserve option as pass-through to sync.tcl
+2003-03-19  jcw
+   * wrap.tcl: added "-uncomp name" to keep specific file(s) uncompressed
+2003-03-06  jcw
+   * help.tcl: fix typo
+2003-03-05  jcw
+   * fetch.tcl, update.tcl: add proxy support (autoproxy+uri packages)
+2003-03-01  jcw
+   * starsync.tcl: whoops, needed a catch for use with older tclkits
+2003-02-28  jcw
+   * starsync.tcl: adjusted to set translucent state for server mode
+2003-02-24  jcw
+   * sdx.tcl: leave errors visible when it happens in gui mode
+2003-02-23  jcw
+   * wrap.tcl: added message when customizing the tclkit.icon
+2003-02-21  jcw
+   * sdx.tcl: added code to make sdx work with Tk (Mac/Win console mode)
+2003-02-14  jcw
+   * version.tcl: ignore CVS/RCS/core/a.out in Version ID calculations
+2003-02-11  jcw
+   * wrap.tcl: custom icon must now be called tclkit.ico (not custom.ico)
+   * wrap.tcl: remove error handling from starkit headers
+               NOTE: affects *all* starkits built from now on with sdx!
+2003-02-09  jcw
+   * app-sdx/starsync.tcl: added wrapper to set up a starsync CGI server
+   * lsk.tcl, version.tcl: standardized timestamp as "YYYY/MM/DD HH:MM:SS"
+2003-02-08  jcw
+   * starsync.tcl: fixed bad call to ::vfs::mk4::_umount
+   * lsk.tcl: fix output alignment of dir listings
+   * qwrap.tcl: remove superfluous unmount, now that wrap gets it right
+   * wrap.tcl: added code to support custom icons in Win32 starpacks
+2003-02-07  jcw
+   * version.tcl: reversed output fields, this is more useful for sorting
+2003-02-06  jcw
+   * version.tcl: allow dirnames as input args, deal with symlinked files
+2003-02-01  jcw
+   * lsk.tcl: show century in lsk output
+   * starsync.tcl: workaround for mk4vfs's inability to mount symlinks
+   * sync.tcl: workaround for some tcl revs not copying file mod time
+2003-01-29  jcw
+   * update.tcl, starsync package: added starsync package for quickly
+   updating starkits from a special "Starsync" server (based on http).
+   * version.tcl: better error msg when starkit file is not found
+2003-01-28  jcw
+   * sync.tcl: fixed a weird missing return in file_copy
+   * sync.tcl: change -text default to 0, i.e. copy in binary mode
+   * wrap.tcl: get rid of undocumented single-letter options (-x)
+2003-01-26  jcw
+   * mkinfo.tcl: tweak to support multiple input files on cmdline
+   * version.tcl: new function to establish a starkit version id
+   * wrap.tcl: fix off-by-one to pad header to 256b i.s.o. 272b
+   * wrap.tcl: fix mod date not being copied right for binary files
+2002-12-07  jcw
+   * tgz2kit.tcl, help.tcl: new module, targz to starkit file converter
+2002-12-05  jcw
+   * help.tcl: removed "in help" debug print
+   * mkinfo.tcl: new module, prints some info about MK datafiles
+2002-11-30  jcw
+   * wrap.tcl, crc.tcl: added -macbinary flag to unpack, adjust VFS, and
+   repack a MacBinary file used as "-runtime" argument, not wel tested
+2002-11-13  jcw
+   * all: added change log, this'll grow until startool takes over :)
