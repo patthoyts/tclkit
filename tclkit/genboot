@@ -1,0 +1,19 @@
+# use this if there is no tclsh* to start genkit with
+
+P=`pwd`
+H=`hostname`
+V=${KIT_VERSION-4}
+T=$P/src/tcl
+[ $V -ne 4 ] && T=$P/src/tcl8$V
+echo "  building tcl8.$V using source from $T"
+mkdir -p build/$H/tcl
+mkdir -p out/$H
+(
+  cd build/$H/tcl
+  sh $T/unix/configure \
+        --disable-shared \
+  --prefix=$P/noarch \
+        --exec-prefix=$P/install/$H
+  make binaries libraries
+  make install-binaries install-libraries
+) > out/$H/tcl8$V 2>&1

@@ -1,0 +1,878 @@
+#!/bin/sh
+#
+#   Generate TclKit - run "tclsh genkit", or see info at end of this script.
+#
+#   Written by Jean-Claude Wippler, as part of Tclkit.
+#   March 2003 - placed in the public domain by the author.
+#   October 2005 - modified to support both 8.4 and 8.5 builds (and lite)
+#   December 2006 - removed vlerq/thrive code, this is now handled by "kitgen"
+#
+#   For latest version of this tool see <http://www.equi4.com/pub/tk/tars/>
+#   $Id: genkit 4207 2008-04-22 16:54:13Z jcw $
+# \
+TCL_LIBRARY=noarch/lib/tcl8.${KIT_VERSION-4}; export TCL_LIBRARY
+# \
+exec "install/`hostname`/bin/tclsh8.${KIT_VERSION-4}" "$0" ${1+"$@"}
+
+# To build an 8.4 version of tclkit[sh], use "tclsh genkit A", etc.
+# To build an 8.5 version, use "KIT_VERSION=5 tclsh genkit A", etc.
+# To build an 8.6 version, use "KIT_VERSION=6 tclsh genkit A", etc.
+
+if {[info exists env(KIT_VERSION)]} { set V $env(KIT_VERSION) } else { set V 4 }
+
+# The following  is needed to launch a tclsh or kitsh which does not yet
+# have the necessary runtime VFS appended at the end of the executable.
+if {![info exists env(TCL_LIBRARY)]} {
+  set env(TCL_LIBRARY) [file join [pwd] noarch/lib/tcl8.$V]
+}
+
+# This code is dual-mode, it can be run as tcl or as sh script, which is
+# needed to bootstrap this stuff.  Make sure Tcl is not too old, though.
+
+  package require Tcl 8.0
+
+# This is the base url to fetch source tars from if not already present:
+
+  set origurl http://www.equi4.com/pub/tk
+
+# All platform differences are collected below for easy reference.
+#
+# The idea is quite straightforward:
+#   - the X array is set up so "$X(anything)" defaults to "anything"
+#   - the Z array is set up so "$Z(anything)" defaults to ""
+#   - i.e. "$X(foo)" defaults to "foo" and "$Z(foo)" defaults to ""
+#   - then for each platform, we can add overrides to alter defaults
+#
+# NOTE that if the file "genkit.local" exists, it will be sourced before
+# actual processing begins - this allows adding more elaborate tweaks.
+
+  array set X {}
+  array set Z {}
+
+  if {$V != "4"} { set Z(85) 8$V }
+
+  switch -glob $tcl_platform(os) {
+    AIX		{ array set Z {tclsuff "-Wl,-bshared -lcrypt" tksuff -lIM}
+		  array set X {gcc xlC g++ xlC} }
+    BSD/OS	{ array set X {make gmake} }
+    HP-UX	{ array set X {gcc cc g++ aCC} }
+    NetBSD	{ array set X {. ""}
+		  set env(LD_RUN_PATH) /usr/X11R6/lib }
+    OpenBSD	{ array set Z {vso .1.0}
+    		  array set X {. ""} }
+    #OSF1	{ array set X {gcc cc g++ cxx} }
+    #SunOS	{ array set X {g++ gcc}; set env(CC) gcc }
+    SunOS	{ array set Z {tclsuff "-Wl,-Bstatic -lstdc++ -Wl,-Bdynamic"
+		               tksuff "-Wl,-Bstatic -lstdc++ -Wl,-Bdynamic"} 
+		  set env(CC) gcc }
+    Windows*	{ array set Z {s s .exe .exe}
+    		  array set X {. "" unix win}
+    		  set X(tclsh8.$V) tclsh8${V}s.exe
+		}
+    default	{ array set X {} }
+  }
+
+# this case is too messy to include in the above switch
+  if {$tcl_platform(os) == "Darwin"} {
+    array set Z {tclmakesuff
+		      {CFLAGS_OPTIMIZE=-gfull\ -Os \
+		       CC_SWITCHES=\$(STUB_CC_SWITCHES)\ -mdynamic-no-pic \
+		       LDFLAGS_OPTIMIZE=-Wl,-dead_strip,-s}
+		 stripopt -x
+		 tkdynmakesuff {-o wish TK_SHLIB_LD_EXTRAS=}}
+    array set X {make {make SHLIB_LD=g++\ -bundle\ \$(LDFLAGS)}}
+    if {[info exists env(TCLKIT_AQUA)] && "$env(TCLKIT_AQUA)" == "1"} {
+      append Z(tkdynmakesuff) \
+	{ TK_SHLIB_LD_EXTRAS=-sectcreate\ __TEXT\ __tk_rsrc\ \$\(TK_RSRC_FILE\)}
+      lappend Z(tkconfig) --enable-aqua
+    }
+}
+
+# make $X(anything) default to the value "anything"
+  proc xdefval {a e op} { if {![info exists ::X($e)]} { set ::X($e) $e } }
+  trace var X r xdefval
+
+  if {[info exists env(EXTRA_MAKE_FLAGS)]} {
+    set X(make) "$X(make) $env(EXTRA_MAKE_FLAGS)"
+  }
+
+# make $Z(anything) default to the empty string
+  proc zdefval {a e op} { if {![info exists ::Z($e)]} { set ::Z($e) "" } }
+  trace var Z r zdefval
+
+# copy one file and adjust modification to same as original
+  proc dupfile {from to} {
+    set mod [file mtime $from]
+    if {![file exists $to] || $mod != [file mtime $to]} {
+      file copy -force $from $to
+      file mtime $to $mod
+    }
+  }
+
+# recursively copy subdirs and files, if modification times differ
+  proc sync {from to} {
+    foreach path [glob -nocomplain [file join $from *]] {
+      set tail [file tail $path]
+      set dest [file join $to $tail]
+      if {[file isdir $path]} {
+	file mkdir $dest
+	sync $path $dest
+      } else {
+	dupfile $path $dest
+      }
+    }
+  }
+
+# return file contents as a string
+  proc readfile {name {binary 0}} {
+    set fd [open $name]
+    if {$binary} {
+      fconfigure $fd -translation binary -encoding binary
+    }
+    set contents [read $fd]
+    close $fd
+    return $contents
+  }
+
+# calculate a simple 4-digit sum of a string
+  proc simplesum {str} {
+    set s 0
+    foreach x [split $str ""] { 
+      binary scan $x c v
+      set s [expr {7*$s+$v}]
+    }
+    return [format %04d [expr {abs($s) % 9000 + 1000}]]
+  }
+
+# calculate an md5 checksum for a file
+  proc md5sum {name} {
+    if {[catch { lindex [exec md5sum -b $name] 0 } result]} {
+      set result [lindex [exec md5 $name] end]
+    }
+    return $result
+  }
+
+# create a tag for a file and delete it
+  proc tagfile {name} {
+    if {[catch { md5sum $name } tag]} {
+      set tag ""
+    } else {
+      lappend tag [file size $name] [file mtime $name]
+    }
+    file delete name
+    return [linsert $tag 0 $name]
+  }
+
+# compare tag, if same then restore its modification time
+  proc untagfile {tag} {
+    foreach {nm md sz mtime} $tag break
+    if {[file exists $nm] && [file size $nm] == $sz && [md5sum $nm] == $md} {
+      file mtime $nm $mtime
+    }
+  }
+
+# convert seconds to readable date/time format
+  proc timestamp {{now ""} {sep -}} {
+    if {$now == ""} { set now [clock seconds] }
+    return [clock format $now -format "%Y/%m/%d$sep%H:%M:%S"]
+  }
+
+# convert possibly globbed path specifier to real name, if unique
+  proc unglob {path} {
+    set f [glob -nocomplain $path]
+    if {[llength $f] == 1} { set path [lindex $f 0] }
+    return $path
+  }
+
+# execute external command
+  proc run {args} {
+    puts -nonewline [format {    %-30.30s... } $args]
+    flush stdout
+
+    puts $::F "\nRUN: $args\n"
+
+    flush $::F
+    set err [catch { eval exec $args >>& $::P/out/$::H/$::target } msg]
+    seek $::F 0 end
+
+    if {$err == 0} {
+      puts "ok"
+    } else {
+      puts "FAILED:"
+      puts "-[string repeat {=-} 39]\n$args\n-[string repeat {#-} 39]"
+      puts ">>> Look in the file 'out/$::H/$::target' for details."
+      return -code error $msg
+    }
+  }
+
+# run a configure script
+  proc config {dir args} {
+    if {![file exists Makefile]} {
+      eval [list run sh [file join ../../../src $dir configure] \
+	    --prefix=$::P/noarch --exec-prefix=$::I] $args
+    }
+  }
+
+# parse and load tcl/tk config files into global vars
+  proc loadconf {name} {
+    set vars {}
+
+    foreach x {AR CC CFLAGS DBGX LDFLAGS LIBS \
+		LIB_RUNTIME_DIR NODOT_VERSION VERSION} {
+      global $x
+      set $x ""
+    }
+
+    set fd [open $name]
+    while {[gets $fd line] >= 0} {
+      if {[regexp {^(\w+)=$} $line - name]} {
+	set value ""
+      } elseif {![regexp {^(\w+)='(.*)'$} $line - name value]} {
+	continue
+      }
+      global $name
+      set $name [subst $value]
+      lappend vars $name
+    }
+    close $fd
+    return $vars
+  }
+
+# summarize all available results
+  proc summarize {aref {modules {kitsh itcldyn tkdyn mkdyn builds}}} {
+    global V
+    upvar $aref summary
+
+    array set targets {}
+    array set platforms {}
+
+    foreach file [glob -nocomplain out/*/*] {
+      set platform [lindex [file split $file] 1]
+      set platforms($platform) 1
+      set target [lindex [file split $file] 2]
+      set targets($target) 1
+      set log [readfile $file]
+      switch -regexp $log {
+	"\nERROR:"  { set status ERR }
+	"\nEND\."   { set status (+) }
+	default	{ set status BAD }
+      }
+      set ${target}($platform) $status
+      array set info:$platform {}
+      if {$target == "tcl"} {
+	foreach line [split $log \n] {
+	  if {[regexp {^tcl_platform\((\w+)\)\s+= (.*)} $line - key value]} {
+	    set info:${platform}($key) $value
+	  }
+	}
+      }
+    }
+
+    array set files {}
+
+    foreach {target mask} {
+      kit       kit{,.exe}
+      kitsh     kitsh{,.exe}
+      mkdyn     lib/Mk4tcl.{so,so.1.0,sl,dylib,dll}
+      itcldyn   lib/itcl3.4/libitcl3{,.}4.{so,so.1.0,sl,dylib,dll}
+      tkdyn     lib/libtk8{,.}[45].{so,so.1.0,sl,dylib,dll}
+      tcl       bin/tclsh8{,.}[45]{,s.exe}
+    } {
+      array set $target {}
+
+      foreach file [glob -nocomplain install/*/$mask] {
+	set platform [lindex [file split $file] 1]
+	set mtime [timestamp [file mtime $file]]
+	lappend ${target}($platform) $mtime [file size $file]b
+	lappend files($platform) $target
+      }
+    }
+
+    foreach target [lsort [array names targets]] {
+      foreach {k v} [array get $target] {
+	set info:${k}($target) $v
+      }
+    }
+
+    set platlist {}
+    array set summary {}
+
+    foreach platform [lsort [array names platforms]] {
+      if {[info exists info:${platform}(machine)] > 0} {
+	lappend platlist $platform
+	set summary($platform,id) [simplesum $platform]
+	foreach k "machine os osVersion wordSize byteOrder $modules" {
+	  set x {}
+	  if {[info exists info:${platform}($k)]} {
+	    set x [set info:${platform}($k)]
+	    switch $k {
+	      byteOrder { regsub {Endian} $x {} x }
+	    }
+	    regsub {^\(\+\)} $x {OK} x
+	    regsub {^OK } $x {} x
+	    if {$k != "builds"} { set x [lindex $x 0] }
+	    if {[regsub {^20(0\d)/(\d\d)/(\d\d)-.*$} $x {\1\2\3} x]} {
+	      switch $k kitsh - itcldyn - tkdyn - mkdyn {
+		set v [string map {kitsh sh tkdyn tdyn itcldyn idyn \
+                                   mkdyn mdyn vdyn} $k]
+		lappend info:${platform}(builds) $v
+	      }
+	    }
+	  }
+	  set summary($platform,$k) $x
+	}
+      }
+    }
+
+    return $platlist
+  }
+
+  # Copy a URL to a file and print meta-data
+  # (this sample code was adapted from the Tcl manual page)
+  proc origfetch {file} {
+    package require http
+
+    if {[info exists ::env(http_proxy)]} {
+      regexp {//(.*):(.*)} $::env(http_proxy) m h p
+      http::config -proxyhost $h -proxyport $p
+    }
+
+    puts -nonewline "  fetching tars/$file ... "
+    flush stdout
+
+    set fd [open tars/$file w]
+    set t [http::geturl $::origurl/tars/$file -channel $fd -blocksize 4096]
+    close $fd
+
+    scan [http::code $t] {HTTP/%f %d} ver ncode
+    puts [http::status $t]
+    http::cleanup $t
+
+    if {$ncode != 200 || [file size tars/$file] == 0} {
+      file delete tars/$file
+    }
+  }
+
+namespace eval commands {
+
+# Step 1: acquire and unpack all the necessary sources
+# The goal is to end up with a src/ dir and tcl/tk/etc dirs in it
+  proc A {args} {
+    global origurl Z
+    file mkdir src
+
+    set packages $args
+    if {[llength $packages] == 0} {
+      set packages [list tcl$Z(85) tk$Z(85) itcl mk vfs kit zlib]
+    }
+
+    foreach pkg $packages {
+      if {[file exists src/$pkg]} {
+	continue
+      }
+      set cvs "cvs/$pkg"
+      if {[file isdir $cvs]} {
+	puts "  symlinking to $cvs"
+	cd src
+	exec ln -s ../$cvs $pkg
+	cd ..
+	continue
+      }
+      set tar $pkg.tar.gz
+      if {![file isfile tars/$tar]} {
+	file mkdir tars
+	origfetch $tar
+      }
+      if {[file isfile tars/$tar]} {
+	puts "  unpacking tars/$tar"
+	cd src
+	# on HP-UX, gzip|tar generates a non-zero status code
+	# ignore it, check for the result being created instead
+	catch { exec gzip -d < ../tars/$tar | tar xf - }
+	if {![file isdirectory $pkg]} {
+	  puts stderr "$pkg: ungzip or untar failed"
+	}
+	cd ..
+        continue
+      }
+      puts stderr "$pkg: not found"
+    }
+
+    if {![file exists tars/runtime$Z(85).kit]} {
+      origfetch runtime$Z(85).kit
+    }
+    if {![file exists tars/runtime$Z(85)-sh.kit]} {
+      origfetch runtime$Z(85)-sh.kit
+    }
+  }
+
+# Step 2: build all the components of TclKit
+  proc B {args} {
+    global target F H P B I S V X Z
+
+    switch -- $args {
+      ""     { set args {zlib vfs mk kitsh itcldyn tkdyn} }
+      static { set args {itcl tk kit} }
+      all    { set args {zlib vfs mk itcl tk kitsh kit itcldyn tkdyn} }
+    }
+
+    set P [pwd]
+    set B $P/build/$H
+    set I $P/install/$H
+    set S $P/src
+
+    foreach target $args {
+      puts "  $target:"
+
+      file mkdir out/$H
+      set F [open $P/out/$H/$target w]
+      fconfigure $F -buffering line
+
+      if {[catch {
+	file mkdir $B/$target
+	cd $B/$target 
+
+	switch $target {
+
+	  tcl {
+	    config tcl$Z(85)/$X(unix) --disable-shared
+	    #run $X(make) genstubs
+	    eval run $X(make) binaries \
+	      LD_SEARCH_FLAGS= CC_SEARCH_FLAGS= TCL_LIBRARY= TCL_PACKAGE_PATH= \
+	      $Z(tclmakesuff)
+	    file mkdir $I
+	    eval run $X(make) install-binaries install-libraries
+	    # results have been installed so tclsh can be used
+	    run $I/bin/$X(tclsh8.$V) << "parray tcl_platform"
+	  }
+
+	  tk {
+	    eval [list config tk$Z(85)/$X(unix) --with-tcl=$B/tcl \
+			  --disable-shared] $Z(tkconfig)
+	    #run $X(make) genstubs
+	    eval run $X(make) binaries \
+	      LD_SEARCH_FLAGS= CC_SEARCH_FLAGS= TK_LIBRARY=
+	  }
+
+	  tkdyn {
+	    eval [list config tk$Z(85)/unix --with-tcl=$B/tcl] $Z(tkconfig)
+	    #run $X(make) genstubs
+	    close [open wish w]
+	    eval run $X(make) binaries \
+	      LD_SEARCH_FLAGS= CC_SEARCH_FLAGS= TK_LIBRARY= $Z(tkdynmakesuff)
+	    file mkdir $I
+	    eval run $X(make) install-binaries $Z(tkdynmakesuff)
+	    # don't keep the installed wish, just the shared lib
+	    file delete $I/bin/wish8.$V
+	    set tklib [unglob $I/lib/libtk8*]
+	    exec chmod +w $tklib
+	    catch { eval exec strip $Z(stripopt) $tklib } }
+
+	  itcl {
+	    config itcl/itcl --with-tcl=$B/tcl --disable-shared
+	    eval run $X(make) binaries ITCL_LIBRARY=
+	  }
+
+	  itcldyn {
+	    config itcl/itcl --with-tcl=$B/tcl
+	    eval run $X(make) binaries ITCL_LIBRARY=
+	    file mkdir $I
+	    eval run $X(make) install-binaries
+	    catch {
+	      eval exec strip $Z(stripopt) [unglob $I/lib/itcl3*/libitcl3*]
+	    }
+	  }
+
+	  mk {
+	    config mk/unix --with-tcl=$S/tcl$Z(85)/generic --disable-shared
+	    eval run $X(make) Mk4tcl.a
+	  }
+
+	  mkdyn {
+	    config mk/unix --with-tcl=$S/tcl$Z(85)/generic
+	    eval run $X(make) tcl
+	    # MK installs in completely wrong spot, do a manual copy instead
+	    file mkdir $I/lib
+	    file copy -force [unglob $B/mkdyn/Mk4tcl*] $I/lib
+	    catch { eval exec strip $Z(stripopt) [unglob $I/lib/Mk4tcl*] }
+	  }
+
+	  vfs {
+	    config vfs --with-tcl=$B/tcl --disable-shared
+	    eval run $X(make) binaries
+	  }
+
+	  zlib {
+	    # copy all files to build area, it doesn't build in another spot
+	    sync $S/zlib .
+	    config [pwd]
+	    eval run $X(make) CC=$X(gcc) libz.a
+	  }
+
+	  kitsh -
+	  kitsh-static -
+	  kit {
+	    # copy all files to build area, it doesn't build in another spot
+	    sync $S/kit .
+
+	    eval global [loadconf $B/tcl/tclConfig.sh]
+
+	    # work around a quoting bug when 64-bit ints are supported
+	    regsub {long long} $TCL_DEFS {long\ long} TCL_DEFS
+
+	    # work around a quoting bug in -DPACKAGE_STRING
+	    regsub {tcl 8} $TCL_DEFS {tcl\ 8} TCL_DEFS
+
+	    # work around a quoting bug in -DMODULE_SCOPE
+	    regsub {extern __attribute__} $TCL_DEFS {extern\ __attribute__} TCL_DEFS
+
+	    set D [list -DNDEBUG -DTCL_LOCAL_APPINIT=TclKit_AppInit]
+	    set O [list -I. -I$S/tcl$Z(85)/unix -I$S/tcl$Z(85)/generic \
+			-I$S/mk/include -I$S/zlib]
+	    set L [list ../tcl/libtcl8$X(.)$V$Z(s).a ../vfs/libvfs1$X(.)3.a \
+		  	../zlib/libz.a ../mk/Mk4tcl.a]
+	    eval lappend L $TCL_LD_FLAGS
+
+	    switch $target {
+	      kitsh {
+		eval lappend L $TCL_LIB_SPEC $TCL_LIBS $Z(tclsuff)
+		set gcc $X(g++)
+	      }
+	      kitsh-static {
+		lappend D -DKIT_INCLUDES_ITCL
+		lappend L ../itcl/libitcl3$X(.)4.a
+		eval lappend L $TCL_LIB_SPEC $TCL_LIBS $Z(tclsuff)
+		set gcc [list $X(g++) -static]
+		set target kitsh
+	      }
+	      kit {
+		eval global [loadconf $B/tk/tkConfig.sh]
+		set gcc $X(g++)
+
+		lappend D -DKIT_INCLUDES_TK -DKIT_INCLUDES_ITCL
+		eval lappend O -I$S/tk$Z(85)/generic $TK_XINCLUDES
+		lappend L ../itcl/libitcl3$X(.)4.a
+		eval lappend L $TK_BUILD_LIB_SPEC $TK_LIBS $Z(tksuff)
+	      }
+	    }
+
+	    append target $Z(.exe)
+	    eval run $X(gcc) -c $O $D $TCL_DEFS $TCL_CFLAGS_OPTIMIZE \
+		[glob src/*.c] [list $S/tcl$Z(85)/unix/tclAppInit.c] $Z(gccsuff)
+	    eval run $gcc -o $target [glob *.o] $L $Z(ldsuff)
+	    run strip $target
+
+	    file mkdir $I
+	    file delete $I/$target
+	    file copy $target $I
+
+	    run ls -l $I
+	  }
+	}
+	puts $F "\nEND."
+      } err]} {
+	puts "      ERROR: $err"
+	puts $F "\nERROR: $::errorInfo"
+      }
+      close $F
+      cd $P
+    }
+
+    puts "  Done."
+  }
+
+# Step 3: collect results
+  proc C {} {
+    global H Z
+    exec tar cf - install/$H out/$H | gzip >result$Z(85)-$H.tar.gz
+  }
+
+# Step 4: create a dummy tclkit and try it
+  proc D {{type ""} {runtime ""}} {
+    global H V X Z
+    set I install/$H
+    set E [info sharedlibext]
+
+    file copy -force $I/kitsh$type dummy$type$Z(85)-$H
+    file attributes dummy$type$Z(85)-$H -permissions +x
+    if {$runtime == ""} { set runtime tars/runtime$Z(85).kit }
+    exec cat $runtime >>dummy$type$Z(85)-$H
+
+    set script [string map [list @H $H @I $I @E $E$Z(vso) @. $X(.) @V $V] {
+      puts "  info loaded = [info loaded]"
+      puts "  tclkit_version = $vfs::tclkit_version"
+      parray tcl_platform
+
+      if {[file exists @I/lib/itcl3.4/libitcl3@.4@E]} {
+        load @I/lib/itcl3.4/libitcl3@.4@E
+      }
+      puts "  package Itcl = [package require Itcl]"
+
+      if {[info exists env(DISPLAY)] && $env(DISPLAY) != ""} {
+	if {[file exists @I/lib/libtk8@.@V@E]} {
+	  load @I/lib/libtk8@.@V@E
+	  puts "  package Tk = [package require Tk]"
+	  pack [label .l -text " @H says HELLO! "] -padx 50 -pady 50
+	} else {
+	  puts "  *** Tk not present, skipping Tk test ***"
+	}
+      } else {
+        puts "  *** DISPLAY has not been defined, skipping Tk test ***"
+      }
+
+      after 3000 destroy .
+      puts "  running [file tail [info nameofexe]]"
+    }]
+
+    exec ./dummy$type$Z(85)-$H <<$script >@stdout 2>@stderr
+  }
+
+# Step 5: extended version includes incrtcl and tk
+  proc E {{type ""}} {
+    global H V X Z
+    set I install/$H
+    set E [info sharedlibext]
+    set R tars/runtime$Z(85).kit
+
+    file copy -force $I/kitsh$type tclkit$type$Z(85)-$H
+    file attributes tclkit$type$Z(85)-$H -permissions +x
+
+    foreach x {itcl3.4/libitcl3$X(.)4$E$Z(vso) libtk8$X(.)$V$E$Z(vso)} {
+      if {[file exists $I/lib/$x]} {
+	# needed for OpenBSD, which leaves them as 0555
+	file attributes $I/lib/$x -permissions +w
+	# MacOS X needs to strip shared libs with -x
+	eval exec strip $Z(stripopt) $I/lib/$x 
+      }
+    }
+
+    # the following approach makes sure the result is optimally packed
+    set script [string map [list @H $H @I $I @E $E @R $R @. $X(.) @O $Z(vso) \
+				  @Y $type$Z(85) @V $V] {
+      set db [vfs::mk4::Mount @R @R -readonly]
+      vfs::attributes @R -state translucent
+      file copy @I/lib/itcl3.4/libitcl3@.4@E@O @R/lib/itcl3.4/libitcl3.4@E
+      file copy @I/lib/libtk8@.@V@E@O @R/lib/tk8.@V/libtk8.@V@E
+      set fd [open tclkit@Y-@H a]
+      mk::file save $db $fd
+      close $fd
+      vfs::unmount @R
+    }]
+
+    exec ./dummy$Z(85)-$H <<$script
+    puts "  tclkit$type$Z(85)-$H: [file size dummy$type$Z(85)-$H] ->\
+			      [file size tclkit$type$Z(85)-$H]"
+  }
+
+# Private use: freeze build results for packaging
+  proc F {} {
+    global V
+    file mkdir parts
+
+    foreach pf [summarize ia] {
+      if {$ia($pf,builds) == ""} continue
+
+      set info(seq) [simplesum $pf]
+      set info(name) [string tolower $ia($pf,os)-$ia($pf,machine)]
+      regsub -all {[^a-z0-9-]} $info(name) {} info(name)
+
+      set iprefix install/$pf
+      set oprefix parts/$info(name).$info(seq)
+
+      set lib $iprefix/lib
+      set sfx ".{so,so.1.0,sl,dylib,dll}"
+
+      set tag [tagfile $oprefix,in]
+
+      foreach build $ia($pf,builds) {
+        switch $build {
+	  sh {
+	    dupfile $iprefix/kitsh $oprefix,sh
+	  }
+	  idyn {
+	    dupfile [unglob $lib/itcl3.4/libitcl3{,.}4$sfx] $oprefix,it
+	  }
+	  tdyn {
+	    dupfile [unglob $lib/libtk8{,.}$V$sfx] $oprefix,tk
+	  }
+	  full {
+	    dupfile $iprefix/kit $oprefix,ui
+	  }
+	  mdyn {
+	    dupfile [unglob $lib/Mk4tcl$sfx] $oprefix,mk
+	  }
+	}
+      }
+
+      foreach x [glob -nocomplain $oprefix,*] {
+      	regsub {.*,} $x {} k
+	if {$k != "in"} {
+	  set info($k) [list [file mtime $x] [md5sum $x] [file size $x]]
+	  file attributes $x -permissions 0755
+	}
+      }
+
+      foreach x [array names ia $pf,*] {
+        set k [lindex [split $x ,] 1]
+	switch $k kit - kitsh - idyn - tdyn - mdyn - vdyn continue
+	set info($k) $ia($x)
+      }
+
+      foreach x {tcl tk} {
+	if {[file exists $iprefix/lib/${x}Config.sh]} {
+	  foreach y [loadconf $iprefix/lib/${x}Config.sh] {
+	    set info($y) [string trim [set ::$y]]
+	  }
+	}
+      }
+
+      set fd [open $oprefix,in w]
+      foreach x [lsort [array names info]] {
+        puts $fd [list $x $info($x)]
+      }
+      close $fd
+
+      untagfile $tag
+
+      unset info
+    }
+  }
+
+# Private use: generate all builds
+  proc G {} {
+    global V Z
+    file mkdir head
+
+    foreach x [glob -nocomplain parts/*,in] {
+      regexp {.*/(.*-.*)\.(\d+),in} $x - pf seq
+      regsub {,in} $x {} prefix
+
+      array set info [readfile $x]
+      set mtime [file mtime $x]
+      set dll $info(TCL_SHLIB_SUFFIX)
+
+      if {[info exist info(sh)]} {
+	if {[info exist info(tk)]} {
+	  set f head/$pf.$seq-dyn.bin
+	  set g ""
+	  exec cat $prefix,sh tars/runtime$Z(85).kit > $f
+	  vfs::mk4::Mount $f kit -nocommit
+	  dupfile $prefix,tk kit/lib/tk8.$V/libtk8.$V$dll
+	  if {[info exist info(it)]} {
+	    dupfile $prefix,it kit/lib/itcl3.4/libitcl3.4$dll
+	  }
+	  vfs::unmount kit
+	} else {
+	  set f head/$pf.$seq-sh.bin
+	  set g -sh
+	  exec cat $prefix,sh tars/runtime$Z(85)$g.kit > $f
+	}
+	if {$mtime < [file mtime tars/runtime$Z(85)$g.kit]} {
+	  set mtime [file mtime tars/runtime$Z(85)$g.kit]
+	}
+	file mtime $f $mtime
+	file attributes $f -permissions 0755
+      }
+
+      if {[info exist info(ui)]} {
+        set f head/$pf.$seq.bin
+        exec cat $prefix,ui tars/runtime$Z(85).kit > $f
+	file attributes $f -permissions 0755
+	if {$mtime < [file mtime tars/runtime$Z(85).kit]} {
+	  set mtime [file mtime tars/runtime$Z(85).kit]
+	}
+	file mtime $f $mtime
+      }
+
+      unset info
+    }
+  }
+
+# Produce a build status summary as a concise HTML table
+  proc S {{outfile status.html}} {
+    set modules {tcl mk vfs kitsh itcldyn tkdyn mkdyn builds}
+
+    set fd [open $outfile w]
+    puts $fd {<html><head><title>TclKit Build Status</title>
+    	<STYLE TYPE="text/css"><!--
+	BODY,TD { font-family: verdana,sans-serif; font-size: 8pt; }
+	TH { font-family: verdana,sans-serif; font-size: 9pt; font-weight: bold; }
+											//--></STYLE></head>}
+    puts $fd "<body><h3>TclKit build status as of [timestamp]</h3>"
+    puts $fd "<table border=0 cellpadding=2 cellspacing=1 bgcolor=#cccccc>"
+    set tags "os machine version word endian $modules id host"
+    puts $fd "<tr><th bgcolor=#ffffff>[join $tags {</th><th bgcolor=#ffffff>}]</td></tr>"
+
+    foreach pf [summarize info $modules] {
+      set all($info($pf,os),$info($pf,machine),$info($pf,osVersion),$pf) $pf
+    }
+
+    set lastfull {}
+    foreach x [lsort -dictionary [array names all]] {
+      set pf $all($x)
+      set show {}
+      set full {}
+      set blanking 1
+      foreach k "os machine osVersion wordSize \
+      			byteOrder $modules id" l $lastfull {
+	set x $info($pf,$k)
+	set x [string range $x 0 19]
+	regsub -all { } $x {\&nbsp;} x
+	regsub {^ERR} $x {<font color=red>ERR</font>} x
+	lappend full $x
+	if {$blanking && $x == $l} { set x "" } else { set blanking 0 }
+	lappend show $x
+      }
+      lappend show [lindex [split $pf .] 0]
+      puts $fd "<tr><td bgcolor=#ffffff>[join $show {</td><td bgcolor=#ffffff>}]</td></tr>"
+      set lastfull $full
+    }
+
+    puts $fd "</table></body></html>"
+    close $fd
+  }
+}
+
+set cmd [lindex $argv 0]
+set argv [lrange $argv 1 end]
+
+if {$cmd == "G"} {
+  package require vfs::mk4
+}
+
+set H [exec hostname]
+
+if {[file exists genkit.local]} { source genkit.local }
+
+# avoid confusing errors further down the line
+if {$H == ""} {
+  puts "genkit requires a hostname, this machine does not have one."
+  exit 1
+}
+
+if {[namespace eval commands [list info procs $cmd]] == ""} {
+  puts "Generate TclKit - by Jean-Claude Wippler <www.equi4.com>
+      (a tool to help build TclKit runtime releases)
+
+    Usage:  $::argv0 cmd ?args...?
+
+    Cmd:    A  =  Step 1: acquire source packages
+	    B  =  Step 2: build binaries
+	    C  =  Step 3: collect results
+            D  =  Step 4: create a dummy tclkit and try it
+            E  =  Step 5: extended version includes incrtcl and tk
+
+    A few more commands, not for general use:
+	    F  =  Freeze build results for packaging
+	    G  =  Generate tclkit* executables
+	    S  =  Generate an HTML build summary
+  "
+  exit
+}
+
+if {[catch { namespace eval commands [concat $cmd $argv] } msg]} {
+  puts stderr $msg
+  exit 1
+}
+
+# vim: ft=tcl

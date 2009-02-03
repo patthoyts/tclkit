@@ -1,0 +1,40 @@
+-------------------------------------------------------------------------------
+Update Nov 2006: for a new Tclkit Lite build system, see the kitgen/ directory.
+-------------------------------------------------------------------------------
+
+This is http://www.equi4.com/pub/tk/README
+Aug 25, 2005
+
+
+  Tclkit is a standalone application combining Tcl, Tk, TclVfs, IncrTcl, and
+  Metakit.  It runs on a wide range of platforms and supports starkits.
+
+  For detailed information about Tclkit and starkits, visit:
+
+	http://www.equi4.com/tclkit.html
+	http://www.equi4.com/starkit.html
+
+  Tclkit comes in two flavors: one is for command-line use, the other has a GUI.
+  On Windows these two are called TCLKITSH.EXE and TCLKIT.EXE, respectively,
+  but on Unix, a single "tclkit" handles both cases (Tk is loaded on request).
+
+  On the classic Mac, you'll need Metrowerks Codewarrior.  See the mac/ subdir.
+  Mac OS X using X11 now builds with genkit.  Mac Aqua is work in progress.
+
+  See http://www.equi4.com/pub/tk/ for a big collection of pre-built binaries.
+
+  Instructions for building tclkit are here:
+
+	http://www.equi4.com/pub/tk/tars/README
+
+  The older information of this README has been deleted.  If you really have to
+  see it, use the CVS interface to retrieve older versions of this document.
+
+LICENSE
+
+  The Tclkit-specific sources are license free, they just have a copyright.
+  Hold the author(s) harmless and any lawful use is permitted.
+
+  This does *not* apply to any of the sources of the other major Open Source
+  Software used in Tclkit, which each have very liberal BSD/MIT-like licenses:
+  	Tcl/Tk, Incrtcl, Metakit, TclVFS, Zlib

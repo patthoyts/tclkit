@@ -1,0 +1,8 @@
+LICENSE
+
+  The Tclkit-specific sources are license free, they just have a copyright.
+  Hold the author(s) harmless and any lawful use is permitted.
+
+  This does *not* apply to any of the sources of the other major Open Source
+  Software used in Tclkit, which each have very liberal BSD/MIT-like licenses:
+  	Tcl/Tk, Incrtcl, Metakit, TclVFS, Zlib
