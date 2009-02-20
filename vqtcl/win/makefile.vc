@@ -158,6 +158,9 @@ Please `cd` to its location first.
 
 PROJECT = vlerq
 PRJNAME = vqtcl
+
+# Uncomment the following line if this is a Tk extension.
+#PROJECT_REQUIRES_TK=1
 !include "rules.vc"
 
 DOTVERSION      = 4.1
@@ -204,27 +207,20 @@ COMPATDIR	= $(ROOT)\compat
 !if !$(DEBUG)
 !if $(OPTIMIZING)
 ### This cranks the optimization level to maximize speed
-cdebug	= $(OPTIMIZATIONS)
+cdebug	= -Zi $(OPTIMIZATIONS)
 !else
-cdebug	=
+cdebug	= -Zi
 !endif
-!else if "$(MACHINE)" == "IA64"
+!else if "$(MACHINE)" == "IA64" #|| "$(MACHINE)" == "AMD64"
 ### Warnings are too many, can't support warnings into errors.
 cdebug	= -Zi -Od $(DEBUGFLAGS)
 !else
-cdebug	= -Zi -WX $(DEBUGFLAGS)
+cdebug	= -Zi -W3 $(DEBUGFLAGS)
 !endif
 
 ### Declarations common to all compiler options
-cwarn = -D _CRT_SECURE_NO_DEPRECATE -D _CRT_NONSTDC_NO_DEPRECATE
+cwarn = $(WARNINGS) -D _CRT_SECURE_NO_DEPRECATE -D _CRT_NONSTDC_NO_DEPRECATE
 cflags = -nologo -c $(COMPILERFLAGS) $(cwarn) -Fp$(TMP_DIR)^\
-
-# Warning level
-!if $(FULLWARNINGS)
-cflags = $(cflags) -W4
-!else
-cflags = $(cflags) -W3
-!endif
 
 !if $(MSVCRT)
 !if $(DEBUG) && !$(UNCHECKED)
@@ -242,9 +238,9 @@ crt = -MT
 
 !if !$(STATIC_BUILD)
 cflags = $(cflags) -DUSE_TCL_STUBS
-#!if defined(TKSTUBLIB)
-#cflags = $(cflags) -DUSE_TK_STUBS
-#!endif
+!if defined(TKSTUBLIB)
+cflags = $(cflags) -DUSE_TK_STUBS
+!endif
 !endif
 
 INCLUDES	= $(TCL_INCLUDES) -I"$(WINDIR)" -I"$(GENERICDIR)"
@@ -265,15 +261,11 @@ ldebug	= -debug:full -debugtype:cv
 ldebug = $(ldebug) -nodefaultlib:msvcrt
 !endif
 !else
-ldebug	= -release -opt:ref -opt:icf,3
+ldebug	= -debug -opt:ref -opt:icf,3
 !endif
 
 ### Declarations common to all linker options
 lflags	= -nologo -machine:$(MACHINE) $(LINKERFLAGS) $(ldebug)
-
-!if $(FULLWARNINGS)
-lflags = $(lflags) -warn:3
-!endif
 
 !if $(PROFILE)
 lflags	= $(lflags) -profile
@@ -296,15 +288,17 @@ conlflags = $(lflags) -subsystem:console
 guilflags = $(lflags) -subsystem:windows
 !if !$(STATIC_BUILD)
 baselibs  = $(TCLSTUBLIB)
-#!if defined(TKSTUBLIB)
-#baselibs  = $(baselibs) $(TKSTUBLIB)
-#!endif
+!if defined(TKSTUBLIB)
+baselibs  = $(baselibs) $(TKSTUBLIB)
+!endif
 !endif
 
 # Avoid 'unresolved external symbol __security_cookie' errors.
 # c.f. http://support.microsoft.com/?id=894573
 !if "$(MACHINE)" == "IA64" || "$(MACHINE)" == "AMD64"
+!if $(VCVERSION) >= 1400 && $(VCVERSION) < 1500
 baselibs   = $(baselibs) bufferoverflowU.lib
+!endif
 !endif
 
 #---------------------------------------------------------------------
@@ -320,45 +314,51 @@ TESTFLAGS = $(TESTFLAGS) -file $(TESTPAT)
 #---------------------------------------------------------------------
 
 all:	    setup $(PROJECT)
-$(PROJECT): setup $(PRJLIB)
+$(PROJECT): setup pkgIndex $(PRJLIB)
 install:    install-binaries install-libraries install-docs
+pkgIndex:   $(OUT_DIR)\pkgIndex.tcl
 
-# Tests need to ensure we load the right dll file we
-# have to handle the output differently on Win9x.
-#
-!if "$(OS)" == "Windows_NT"  || "$(MSVCDIR)" == "IDE"
 test: setup $(PROJECT)
-        set TCL_LIBRARY=$(ROOT)/library
-        $(TCLSH) <<
-load [file join [file normalize {$(OUT_DIR)} $(PRJLIBNAME)]] Vlerq
-cd "$(ROOT)/tests"
-set argv "$(TESTFLAGS)"
-source all.tcl
-<<
+	@set TCL_LIBRARY=$(TCL_LIBRARY:\=/)
+	@set TCLLIBPATH=$(OUT_DIR_PATH:\=/)
+	@$(CPY) $(LIBDIR)\*.tcl $(OUT_DIR)
+!if $(TCLINSTALL)
+	@set PATH=$(_TCLDIR)\bin;$(PATH)
 !else
-test: setup $(PROJECT)
-        echo Please wait while the test results are collected
-        set TCL_LIBRARY=$(ROOT)/library
-        $(TCLSH) << >tests.log
-load [file join [file normalize {$(OUT_DIR)}] $(PRJLIBNAME)] Vlerq
-cd "$(ROOT)/tests"
-set argv "$(TESTFLAGS)"
-source all.tcl
-<<
-        type tests.log | more
+	@set PATH=$(_TCLDIR)\win\$(BUILDDIRTOP);$(PATH)
 !endif
+!if "$(OS)" == "Windows_NT"  || "$(MSVCDIR)" == "IDE"
+	$(DEBUGGER) $(TCLSH) "$(ROOT)/tests/all.tcl" $(TESTFLAGS)
+!else
+        @echo Please wait while the tests are collected...
+        $(DEBUGGER) $(TCLSH) "$(ROOT)/tests/all.tcl" $(TESTFLAGS) > tests.log
+	type tests.log | more
+!endif
+
+shell: setup $(PROJECT)
+	@set VLERQ_LIBRARY=$(LIBDIR:\=/)
+	@set TCL_LIBRARY=$(TCL_LIBRARY:\=/)
+	@set TCLLIBPATH=$(OUT_DIR:\=/)
+	@$(CPY) $(LIBDIR)\*.tcl $(OUT_DIR)
+!if $(TCLINSTALL)
+	@set PATH=$(_TCLDIR)\bin;$(PATH)
+!else
+	@set PATH=$(_TCLDIR)\win\$(BUILDDIRTOP);$(PATH)
+!endif
+	$(DEBUGGER) $(TCLSH) $(SCRIPT)
 
 setup:
 	@if not exist $(OUT_DIR)\nul mkdir $(OUT_DIR)
 	@if not exist $(TMP_DIR)\nul mkdir $(TMP_DIR)
 
+# See <tcl>/win/coffbase.txt for extension base addresses.
 $(PRJLIB): $(DLLOBJS)
 !if $(STATIC_BUILD)
 	$(lib32) -nologo -out:$@ @<<
 $**
 <<
 !else
-	$(link32) $(dlllflags) -out:$@ $(baselibs) @<<
+	$(link32) $(dlllflags) -base:0x10C00000 -out:$@ $(baselibs) @<<
 $**
 <<
 	$(_VC_MANIFEST_EMBED_DLL)
@@ -389,7 +389,7 @@ $<
 
 {$(WINDIR)}.rc{$(TMP_DIR)}.res:
 	$(rc32) -fo $@ -r -i "$(GENERICDIR)" -D__WIN32__ \
-		-DCOMMAVERSION=$(DOTVERSION:.=,),0 \
+		-DCOMMAVERSION=$(DOTVERSION:.=,),0,0 \
 		-DDOTVERSION=\"$(DOTVERSION)\" \
 		-DVERSION=\"$(VERSION)$(SUFX)\" \
 !if $(DEBUG)
@@ -406,6 +406,19 @@ $<
 .SUFFIXES:
 .SUFFIXES:.c .rc
 
+#-------------------------------------------------------------------------
+# Explicit dependency rules
+#
+#-------------------------------------------------------------------------
+
+.PHONY: $(OUT_DIR)\pkgIndex.tcl
+
+$(OUT_DIR)\pkgIndex.tcl: $(ROOT)\pkgIndex.tcl.in
+	@nmakehlp -s << $** > $@
+lib@PACKAGE_NAME@@PACKAGE_VERSION@  $(PRJNAME)$(VERSION)$(SUFX)
+@PACKAGE_VERSION@                   $(DOTVERSION)
+<<
+
 #---------------------------------------------------------------------
 # Installation. (EDIT)
 #
@@ -419,17 +432,10 @@ install-binaries:
 	@if not exist "$(SCRIPT_INSTALL_DIR)" mkdir "$(SCRIPT_INSTALL_DIR)"
 	@$(CPY) $(PRJLIB) "$(SCRIPT_INSTALL_DIR)" >NUL
 
-### Automatic creation of pkgIndex
-install-libraries: $(OUT_DIR)\pkgIndex.tcl
+install-libraries:
 	@echo Installing library files to '$(SCRIPT_INSTALL_DIR)'
 	@if exist $(LIBDIR) $(CPY) $(LIBDIR)\*.tcl "$(SCRIPT_INSTALL_DIR)"
 	@$(CPY) $(OUT_DIR)\pkgIndex.tcl "$(SCRIPT_INSTALL_DIR)"
-
-$(OUT_DIR)\pkgIndex.tcl: $(ROOT)\pkgIndex.tcl.in
-	@nmakehlp -s << $** > $@
-lib@PACKAGE_NAME@@PACKAGE_VERSION@  $(PRJNAME)$(VERSION)$(SUFX)
-@PACKAGE_VERSION@                   $(DOTVERSION)
-<<
 
 install-docs:
 	@echo Installing documentation files to '$(DOC_INSTALL_DIR)'

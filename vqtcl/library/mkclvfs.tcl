@@ -103,7 +103,7 @@ namespace eval ::vfs::mkcl {
     proc matchindirectory {db path actual pattern type} {
         set o {}
         if {$type == 0} { set type 20 }
-        set tag [lookUp $db $path]
+        if {[catch {set tag [lookUp $db $path]} err]} { return {} }
         if {$pattern ne ""} {
             set c {}
             if {[isDir $tag]} {

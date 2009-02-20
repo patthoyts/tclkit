@@ -21,7 +21,7 @@ test 2 {} -constraints vfs -body {
 } -match glob -result mkclvfs*
 
 test 3 {} vfs {
-    glob /try1/*
+    glob -directory /try1 *
 } {/try1/main.tcl /try1/ChangeLog /try1/lib}
 
 test 4 {} -constraints vfs -body {
@@ -86,7 +86,7 @@ test 9 {} -constraints vfs -body {
 } -match glob -result mkclvfs*
 
 test 10 {} vfs {
-    glob /try2/*
+    glob -directory /try2 *
 } {/try2/ChangeLog /try2/main.tcl /try2/lib}
 
 test 11 {} -constraints vfs -body {

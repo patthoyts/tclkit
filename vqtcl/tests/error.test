@@ -70,7 +70,7 @@ test 15 {locate the load path of the vlerq extension} -body {
     }
     set path
     # match either a reasonable real path or the empty string if statically linked
-} -match regexp -result {^(.*/libvlerq.*\..*|)$}
+} -match regexp -result {^(.*/(?:(?:libvlerq)|(?:vqtcl)).*\..*|)$}
 
 test 16 {open is not allowed in safe interpreters} -body {
     set i [interp create -safe]

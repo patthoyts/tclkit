@@ -38,8 +38,8 @@ proc readfile {filename} {
   return $data                                                                  
 }
 
-# extract version number from pkgIndex.tcl
-regexp {ifneeded vlerq\s(\S+)\s} [readfile pkgIndex.tcl] - version
+# extract version number from configure.in
+regexp {AC_INIT\(\[vqtcl\],\s*\[([.\d]+)\]\)} [readfile configure.in] - version
 unset -
 
 # make sure the pkgIndex.tcl is found

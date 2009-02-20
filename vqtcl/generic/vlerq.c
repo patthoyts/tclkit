@@ -16,6 +16,9 @@
  */
 
 #include <stddef.h>
+#ifdef HAVE_STDINT_H
+#include <stdint.h>
+#endif
 #include <unistd.h>
 
 typedef ptrdiff_t Int_t; /* large enough to hold a pointer */
@@ -1367,7 +1370,7 @@ int CastObjToItem (char type, Item_p item) {
 			if (type < 'a' || type > 'z')
 				return ObjToItem(CharAsItemType(type), item);
 
-			item->c = CoerceColumn(CharAsItemType(type +'A'-'a'), item->o);
+			item->c = CoerceColumn(CharAsItemType(type + 'A'-'a'), item->o);
 			break;
 	}
 
@@ -1440,7 +1443,7 @@ static void EmitAlign (EmitInfo_p eip) {
 }
 
 void MetaAsDesc (View_p meta, Buffer_p buffer) {
-    int r, rows = ViewSize(meta);
+    int r, rows = (int)ViewSize(meta);
     Column names, types, subvs;
     char type;
     const char *name;
@@ -1974,6 +1977,52 @@ static void MappedFileCleaner (MappedFile_p map) {
 #endif
 }
 
+#if WIN32+0
+/*
+ * If we are opening a Windows PE executable with an attached metakit
+ * then we must check for the presence of an Authenticode certificate
+ * and reduce the length of our mapped region accordingly
+ */
+
+static DWORD
+AuthenticodeOffset(LPBYTE pData, DWORD cbData)
+{
+    if (pData[0] == 'M' && pData[1] == 'Z')              /* IMAGE_DOS_SIGNATURE */
+    {
+        LPBYTE pNT = pData + *(LONG *)(pData + 0x3c);    /* e_lfanew */
+        if (pNT[0] == 'P' && pNT[1] == 'E' && pNT[2] == 0 && pNT[3] == 0)
+        {                                                /* IMAGE_NT_SIGNATURE */
+            DWORD dwCheckSum = 0, dwDirectories = 0;
+            LPBYTE pOpt = pNT + 0x18;                    /* OptionalHeader */
+            LPDWORD pCertDir = NULL;
+            if (pOpt[0] == 0x0b && pOpt[1] == 0x01) {    /* IMAGE_NT_OPTIONAL_HDR_MAGIC */
+                dwCheckSum = *(DWORD *)(pOpt + 0x40);    /* Checksum */
+                dwDirectories = *(DWORD *)(pOpt + 0x5c); /* NumberOfRvaAndSizes */
+                if (dwDirectories > 4) {                 /* DataDirectory[] */
+                    pCertDir = (DWORD *)(pOpt + 0x60 + (4 * 8));
+                }
+            } else {
+                dwCheckSum = *(DWORD *)(pOpt + 0x40);    /* Checksum */
+                dwDirectories = *(DWORD *)(pOpt + 0x6c); /* NumberOfRvaAndSizes */
+                if (dwDirectories > 4) {                 /* DataDirectory[] */
+                    pCertDir = (DWORD *)(pOpt + 0x70 + (4 * 8));
+                }
+            }
+
+            if (pCertDir && pCertDir[1] > 0) {
+                int n = 0;
+                cbData = pCertDir[0];
+                /* need to eliminate any zero padding - up to 8 bytes */
+                while (pData[cbData - 16] != 0x80 && pData[cbData-1] == 0 && n < 16) {
+                    --cbData, ++n;
+                }
+            }
+        }
+    }
+    return cbData;
+}
+#endif /* WIN32 */
+
 static MappedFile_p OpenMappedFile (const char *filename) {
     const char *data = NULL;
     Int_t length = -1;
@@ -1981,15 +2030,28 @@ static MappedFile_p OpenMappedFile (const char *filename) {
 #if WIN32+0
     {
         DWORD n;
-        HANDLE h, f = CreateFile(filename, GENERIC_READ, FILE_SHARE_READ, 0,
-                                    OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
+        HANDLE h, f;
+        OSVERSIONINFO os;
+
+        memset(&os, 0, sizeof(os));
+        os.dwOSVersionInfoSize = sizeof(os);
+	os.dwPlatformId = VER_PLATFORM_WIN32_WINDOWS;
+        GetVersionEx(&os);
+        if (os.dwPlatformId < VER_PLATFORM_WIN32_NT) {
+            f = CreateFileA(filename, GENERIC_READ, FILE_SHARE_READ, 0,
+                OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
+        } else {
+            f = CreateFileW((LPCWSTR)filename, GENERIC_READ, FILE_SHARE_READ, 0,
+                OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
+        }
         if (f != INVALID_HANDLE_VALUE) {
             h = CreateFileMapping(f, 0, PAGE_READONLY, 0, 0, 0);
             if (h != INVALID_HANDLE_VALUE) {
                 n = GetFileSize(f, 0);
                 data = MapViewOfFile(h, FILE_MAP_READ, 0, 0, n);
-                if (data != NULL)
-                    length = n;
+                if (data != NULL) {
+                    length = AuthenticodeOffset((LPBYTE)data, n);
+                }
                 CloseHandle(h);
             }
             CloseHandle(f);
@@ -4117,7 +4179,7 @@ ItemTypes SetCmd_MIX (Item args[]) {
     if (row < 0)
         row += ViewSize(view);
     
-    objv = (const void*) args[2].u.ptr;
+    objv = (const Object_p *) args[2].u.ptr;
     objc = args[2].u.len;
 
     if (objc % 2 != 0) {
@@ -4987,7 +5049,7 @@ ItemTypes DataCmd_VX (Item args[]) {
     meta = args[0].v;
     cols = ViewSize(meta);
     
-    objv = (const void*) args[1].u.ptr;
+    objv = (const Object_p *) args[1].u.ptr;
     objc = args[1].u.len;
 
     if (objc != cols) {
@@ -5480,8 +5542,12 @@ ItemTypes ViewConvCmd_V (Item_p a) {
 #include <string.h>
 
 
-#define USE_TCL_STUBS 1
 #include <tcl.h>
+
+#if 10 * TCL_MAJOR_VERSION + TCL_MINOR_VERSION < 86
+#define Tcl_GetErrorLine(interp) (interp)->errorLine
+#define CONST86
+#endif
 
 /* colobj.c */
 
@@ -5625,7 +5691,7 @@ ItemTypes GetCmd_VX (Item args[]) {
     view = args[0].v;
     currtype = IT_view;
     
-    objv = (const void*) args[1].u.ptr;
+    objv = (const Object_p *) args[1].u.ptr;
     objc = args[1].u.len;
 
     if (objc == 0) {
@@ -6147,7 +6213,7 @@ static int loop_vop(int oc, Tcl_Obj* const* ov) {
                             else if (e == TCL_ERROR) {
                                 char msg[50];
                                 sprintf(msg, "\n    (\"loop\" body line %d)",
-                                                        Interp()->errorLine);
+				    Tcl_GetErrorLine(Interp()));
                                 Tcl_AddObjErrorInfo(Interp(), msg, -1);
                             }
                             break;
@@ -6211,7 +6277,7 @@ ItemTypes LoopCmd_X (Item args[]) {
     int objc;
     const Object_p *objv;
 
-    objv = (const void*) args[0].u.ptr;
+    objv = (const Object_p *) args[0].u.ptr;
     objc = args[0].u.len;
 
     if (loop_vop(objc, objv) != TCL_OK)
@@ -6795,12 +6861,13 @@ ItemTypes DepsCmd_O (Item_p a) {
 #if STATIC_BUILD+0
 #define MyInitStubs(x) 1
 #else
+#ifdef FAKE_TCL_STUBS
 /*
  * stubs.h - Internal stub code, adapted from CritLib
  */
 
-TclStubs               *tclStubsPtr        = NULL;
-TclPlatStubs           *tclPlatStubsPtr    = NULL;
+CONST86 TclStubs               *tclStubsPtr        = NULL;
+CONST86 TclPlatStubs           *tclPlatStubsPtr    = NULL;
 struct TclIntStubs     *tclIntStubsPtr     = NULL;
 struct TclIntPlatStubs *tclIntPlatStubsPtr = NULL;
 
@@ -6836,7 +6903,10 @@ static int MyInitStubs (Tcl_Interp *ip) {
 
     return 1;
 }
-#endif
+#else /* !FAKE_TCL_STUBS */
+#define MyInitStubs(ip) Tcl_InitStubs((ip), "8.4", 0)
+#endif /* FAKE_TCL_STUBS */
+#endif /* !STATIC_BUILD */
 
 #if NO_THREAD_CALLS+0
 Shared_p GetShared (void) {
@@ -7122,7 +7192,7 @@ ItemTypes RefCmd_OX (Item args[]) {
     int objc;
     const Object_p *objv;
     
-    objv = (const void*) args[1].u.ptr;
+    objv = (const Object_p *) args[1].u.ptr;
     objc = args[1].u.len;
 
     args->o = Tcl_ObjGetVar2(Interp(), args[0].o, 0,
@@ -7132,8 +7202,54 @@ ItemTypes RefCmd_OX (Item args[]) {
 
 ItemTypes OpenCmd_S (Item args[]) {
     View_p result;
-    
-    result = OpenDataFile(args[0].s);
+    Tcl_DString ds;
+    char *native;
+
+    /*
+     * When providing a database for a tclkit, we have here a "chicken
+     * and egg" problem with encodings: a call to this code will
+     * result from invoking the "open" script-level Vlerq command, and
+     * thus it will be passed an UTF-8 encoded filename.  In the case
+     * of tclkits this filename is obtained via a call to [info
+     * nameofexecutable], and at the time of that call [encoding
+     * system] is "identity" because the encodings subsystem can be
+     * initialized only after the tclkit VFS is mounted, and its
+     * mounting is what this very function is called for.
+     *
+     * On Windows, when converting between "system native" characters
+     * and UTF-8 (and vice-versa) two encodings may be used:
+     * - [encoding system] on Win9x/ME
+     * - "unicode" encoding on Windows NT.
+     * The "unicode" encoding is built-in, and [encoding system] will
+     * only have correct value on Latin-1 and UTF-8 systems,
+     * on others it will be "identity".
+     *
+     * This means when the tclkit is started from a folder whose name
+     * contains non-latin-1 characters, on Windows NT this function
+     * will receive correct UTF-8 string and the call to
+     * Tcl_WinUtfToTChar() below will return proper array of WCHARs.
+     * On Win95/ME and Unices the behaviour depends on whether the
+     * system encoding happens to be UTF-8 or any variant of Latin-1;
+     * if it is, this function will receive a proper UTF-8 string and
+     * the call to Tcl_WinUtfToTChar()/Tcl_UtfToExternalDString()
+     * below will produce a proper "native" string back. Otherwise,
+     * [encoding system] will be "identity" and due to the way it
+     * works this function will receive a string containing exactly
+     * the bytes returned by some relevant system call, which [info
+     * nameofexecutable] performed and the call to
+     * Tcl_WinUtfToTChar()/Tcl_UtfToExternalDString() will produce an
+     * array of char with the same bytes.  It this case startup from a
+     * folder containing non-latin-1 characters will fail.
+     */
+
+#if WIN32+0
+    native = Tcl_WinUtfToTChar(args[0].s, strlen(args[0].s), &ds);
+#else
+    native = Tcl_UtfToExternalDString(NULL,
+         args[0].s, strlen(args[0].s), &ds);
+#endif
+    result = OpenDataFile(native);
+    Tcl_DStringFree(&ds);
     if (result == NULL) {
         Tcl_AppendResult(Interp(), "cannot open file: ", args[0].s, NULL);
         return IT_unknown;
@@ -7292,7 +7408,7 @@ ItemTypes ViewCmd_X (Item args[]) {
     Tcl_Interp *interp = Interp();
     const CmdDispatch *cmds = GetShared()->info->cmds;
 
-    objv = (const void*) args[0].u.ptr;
+    objv = (const Object_p *) args[0].u.ptr;
     objc = args[0].u.len;
 
     if (objc < 1) {

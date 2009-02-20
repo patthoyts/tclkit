@@ -146,8 +146,10 @@ TEA_ENABLE_SYMBOLS
 # link against the non-stubbed Tcl library.  Add Tk too if necessary.
 #--------------------------------------------------------------------
 
+if test "${SHARED_BUILD}" = "1"; then
 AC_DEFINE(USE_TCL_STUBS, 1, [Use Tcl stubs])
 #AC_DEFINE(USE_TK_STUBS, 1, [Use Tk stubs])
+fi
 
 #--------------------------------------------------------------------
 # This macro generates a line to use when building a library.  It
