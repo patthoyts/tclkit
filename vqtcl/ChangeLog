@@ -1,3 +1,21 @@
+2009-02-20 patthoyts
+  * merge: Merged the following changes from the old repository.
+      - Fixed mkcl for recent change to all branches that propagates errors
+	from matchin directory functions which was breaking tclkit's based
+	on vlerq vfs.
+      - Updated for 8.6 changes. interp->errorLine is now replaced by
+	Tcl_GetErrorLine and the stubs variables are now const. Use
+	-ltclstubs for vqtcl.
+      - Updated the nmake build files for MSCV9 and added a target to run
+	the test suite. Fixed three tests that had unix expectations to
+	pass with windows as well.
+      - Applied patch from kostix to solve problems opening tclkit when
+	the directory has non-ascii characters in the path. Tcl provides a
+	utf-8 string and we need to convert it to the external encoding.
+      - Support release build with symbols under msvc
+      - For 8.6 - do not define USE_TCL_STUBS for static builds
+      - add code signing support for Win32, add stdint.h for newer mingw
+      - stdint.h required. Patched to permit operation on authenticode signed binaries
 2009-02-03  jcw
   * all: this code was copied from http://www.equi4.com/pub/vq/vqtcl.tgz
 2007-01-26  jcw
