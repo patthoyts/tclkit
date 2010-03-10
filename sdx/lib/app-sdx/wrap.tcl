@@ -37,6 +37,15 @@ proc writefile {name data} {
 }
 
 # decode Windows .ICO file contents into the individual bit maps
+# Each icon header has:
+#  byte : width in pixels (0 for 256 px)
+#  byte : height in pixels (0 for 256px)
+#  byte : number of colors in palette (0 for truecolor)
+#  byte : reserved (0)
+#  short: number of color planes (0 or 1)
+#  short: number of bits per pixel
+#  long : size of the bitmap data in bytes
+#  long : offset to the start of bitmap data
 proc decICO {dat} {
   set result {}
   binary scan $dat sss - type count
@@ -45,7 +54,7 @@ proc decICO {dat} {
     if {$cc == 0} { set cc 256 }
     #puts "pos $pos w $w h $h cc $cc p $p bc $bc bir $bir io $io"
     binary scan $dat @${io}a$bir image
-    lappend result ${w}x${h}/$cc $image
+    lappend result ${w}x${h}/$bc $image
   }
   return $result
 }

@@ -1,4 +1,5 @@
 2010-03-10  Pat Thoyts  <patthoyts@users.sourceforge.net>
+   * wrap.tcl: fix handling of truecolor icons (dunnigan)
    * help.tcl: describe the mkzipkit function (jcw)
    * sync.tcl: enhance the rsync ignore file for globs (patthoyts)
 2009-02-03  jcw
