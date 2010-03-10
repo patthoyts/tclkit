@@ -166,6 +166,15 @@ proc rcopy {arr path dest} {
 	}
 	return 0
     }
+    global rsync_globs
+    foreach expr $rsync_globs {
+        if {[string match $expr $path]} {
+            if {$opts(-verbose)} {
+                tclLog "skipping $path (matched $expr) (ignored)"
+            }
+            return 0
+        }
+    }
     if {![file isdirectory $path]} {
 	if {[file exists $dest]} {
 	    _rsync opts file delete $dest
@@ -225,7 +234,11 @@ proc rpreserve {arr args} {
 	catch {unset opts(ignore,$file)}
     }
 }
-
+proc rignore_globs {args} {
+    global rsync_globs
+    set rsync_globs $args
+}
+    
 # 28-01-2003: changed -text default to 0, i.e. copy binary mode
 array set opts {
     -prune	0
@@ -240,8 +253,10 @@ array set opts {
 }
 # 2005-08-30 only ignore the CVS subdir
 # 2007-03-29 added .svn as well
+# 2009-02-02 added .git
 #rignore opts CVS RCS core a.out
-rignore opts CVS .svn
+rignore opts CVS .svn .git
+rignore_globs {}
 
 set USAGE "[file tail $argv0] ?options? src dest
 
@@ -273,9 +288,9 @@ while {[llength $argv] > 0} {
 	puts stderr "invalid option \"$arg\"\n$USAGE"
 	exit 1
     }
-    if {$arg == "-ignore"} {
+    if {$arg eq "-ignore"} {
 	rignore opts [lindex $argv 1]
-    } elseif {$arg == "-preserve"} {
+    } elseif {$arg eq "-preserve"} {
 	rpreserve opts [lindex $argv 1]
     } else {
 	set opts($arg) [lindex $argv 1]
