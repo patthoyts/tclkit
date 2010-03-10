@@ -90,6 +90,15 @@ array set help {
         the head containing the starkit header (or raw executable), and
         all Metakit data stored in the tail file.  See also mkinfo.
     }
+    mkzipkit { Convert a zip archive into a Tcl Module or zipkit file
+
+        Usage: mkzipkit infile outfile ?stubfile?
+
+        Convert a zip archive into a Tcl Module or zipkit file by adding
+        a SFX header that can enable TclKit to mount the archive. This
+        provides an alternative to Metakit-based starkits. If no stubfile
+        is specified, a standard one using vfs::zip::mount will be used.
+    }
     qwrap { Quick-wrap the specified source file into a starkit
 
         Usage: qwrap file ?name? ?options?

@@ -1,3 +1,6 @@
+2010-03-10  Pat Thoyts  <patthoyts@users.sourceforge.net>
+   * help.tcl: describe the mkzipkit function (jcw)
+   * sync.tcl: enhance the rsync ignore file for globs (patthoyts)
 2009-02-03  jcw
    * all: this code was copied from svn://svn.equi4.com/sdx/trunk
 2008-02-24  jcw
